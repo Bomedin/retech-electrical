@@ -1,6 +1,4 @@
-const API_BASE = process.env.NODE_ENV === 'production' 
-  ? 'https://your-backend.up.railway.app' 
-  : 'http://localhost:5000';
+const API_BASE = 'https://retech-electrical.onrender.com';
 
 const servicesList = [
   { name: "Electrical Installation", icon: "fa-bolt", desc: "Professional installation for residential & commercial properties." },
