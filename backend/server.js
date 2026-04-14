@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'retechelectrical@'; // Change in Railway env
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ret@12'; // Change in Railway env
 const SESSION_SECRET = process.env.SESSION_SECRET || 'retech_prod_secret_change_me';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -28,7 +28,7 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // CORS – only allow frontend URL
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({ origin: true, credentials: true }));
 
 // Secure session
 app.use(session({
