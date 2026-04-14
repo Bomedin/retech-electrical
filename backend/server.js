@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'; // Change in Railway env
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'retech_prod_secret_change_me';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -22,23 +22,24 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per window
+  max: 100,
   message: 'Too many requests, please try again later.'
 });
 app.use('/api/', limiter);
 
-// CORS – only allow frontend URL
-app.use(cors({ origin: true, credentials: true }));
+// CORS – allow only your frontend domain
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 
-// Secure session
+// Session – critical for cross‑domain (Netlify → Render)
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // true on Railway (HTTPS)
+    secure: true,          // required for HTTPS (Render uses HTTPS)
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    sameSite: 'none',      // allows cross‑site requests
+    maxAge: 24 * 60 * 60 * 1000  // 24 hours
   }
 }));
 
@@ -47,7 +48,7 @@ const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 app.use('/uploads', express.static(uploadDir));
 
-// Multer with file type validation
+// Multer with file validation
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -89,7 +90,6 @@ function readData() {
 }
 function writeData(data) { fs.writeFileSync(dataFile, JSON.stringify(data, null, 2)); }
 
-// Helper to escape HTML (for stored data)
 function sanitizeString(str) {
   return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
 }
