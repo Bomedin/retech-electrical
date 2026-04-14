@@ -13,17 +13,34 @@ const servicesList = [
 
 let serviceImages = {};
 let adminLoggedIn = false;
+let adminToken = null;
 let siteImages = { homeBackground: null, aboutImage: null };
 let teamMembers = [];
 
+// Helper for JSON API calls (automatically adds token if available)
 async function apiCall(endpoint, options = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// Helper for file uploads (FormData) – adds token header
+async function uploadWithToken(url, formData) {
+  const headers = {};
+  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    headers,
+    credentials: 'include'
+  });
+  return res;
 }
 
 // ========== Services ==========
@@ -77,11 +94,7 @@ async function uploadImageForService(serviceName) {
     const formData = new FormData();
     formData.append('image', file);
     try {
-      const res = await fetch(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      });
+      const res = await uploadWithToken(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, formData);
       if (res.ok) {
         const data = await res.json();
         serviceImages[serviceName] = data.url;
@@ -139,11 +152,7 @@ async function uploadSiteImage(type) {
     const formData = new FormData();
     formData.append('image', file);
     try {
-      const res = await fetch(`${API_BASE}/api/site-image/${type}`, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      });
+      const res = await uploadWithToken(`${API_BASE}/api/site-image/${type}`, formData);
       if (res.ok) {
         const data = await res.json();
         if (type === 'home') siteImages.homeBackground = data.url;
@@ -171,7 +180,13 @@ async function uploadSiteImage(type) {
 async function removeSiteImage(type) {
   if (!confirm(`Remove ${type === 'home' ? 'home background' : 'about'} image?`)) return;
   try {
-    const res = await fetch(`${API_BASE}/api/site-image/${type}`, { method: 'DELETE', credentials: 'include' });
+    const headers = {};
+    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+    const res = await fetch(`${API_BASE}/api/site-image/${type}`, {
+      method: 'DELETE',
+      headers,
+      credentials: 'include'
+    });
     if (res.ok) {
       if (type === 'home') siteImages.homeBackground = null;
       else siteImages.aboutImage = null;
@@ -225,21 +240,14 @@ async function saveSocialLinks() {
     return;
   }
   try {
-    const res = await fetch(`${API_BASE}/api/social-links`, {
+    const res = await apiCall('/api/social-links', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ whatsapp, facebook }),
-      credentials: 'include'
+      body: JSON.stringify({ whatsapp, facebook })
     });
-    if (res.ok) {
-      const data = await res.json();
-      updateSocialLinksUI(data.socialLinks);
-      alert('Social links updated!');
-    } else {
-      alert('Update failed. Make sure you are admin.');
-    }
+    updateSocialLinksUI(res.socialLinks);
+    alert('Social links updated!');
   } catch (err) {
-    alert('Error: ' + err.message);
+    alert('Update failed: ' + err.message);
   }
 }
 
@@ -295,7 +303,9 @@ function renderTeamAdmin() {
   document.querySelectorAll('.delete-team-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (confirm('Delete this team member?')) {
-        await fetch(`${API_BASE}/api/team/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
+        const headers = {};
+        if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+        await fetch(`${API_BASE}/api/team/${btn.dataset.id}`, { method: 'DELETE', headers, credentials: 'include' });
         loadTeam();
       }
     });
@@ -343,7 +353,9 @@ function showTeamModal(editId = null) {
     
     const url = member ? `${API_BASE}/api/team/${member.id}` : `${API_BASE}/api/team`;
     const method = member ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, body: formData, credentials: 'include' });
+    const headers = {};
+    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+    const res = await fetch(url, { method, body: formData, headers, credentials: 'include' });
     if (res.ok) {
       modal.remove();
       loadTeam();
@@ -366,14 +378,23 @@ document.getElementById('submitBookingBtn')?.addEventListener('click', async () 
   }
   msgDiv.innerHTML = '⏳ Submitting...';
   try {
-    await apiCall('/api/appointments', { method: 'POST', body: JSON.stringify({ name, location, phone }) });
-    msgDiv.innerHTML = '✅ Appointment booked! We will contact you.';
-    msgDiv.style.color = '#bbf7d0';
-    document.getElementById('apptName').value = '';
-    document.getElementById('apptLocation').value = '';
-    document.getElementById('apptPhone').value = '';
-    setTimeout(() => msgDiv.innerHTML = '', 3000);
-    if (adminLoggedIn) loadAdminAppointments();
+    const res = await fetch(`${API_BASE}/api/appointments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, location, phone }),
+      credentials: 'include'
+    });
+    if (res.ok) {
+      msgDiv.innerHTML = '✅ Appointment booked! We will contact you.';
+      msgDiv.style.color = '#bbf7d0';
+      document.getElementById('apptName').value = '';
+      document.getElementById('apptLocation').value = '';
+      document.getElementById('apptPhone').value = '';
+      setTimeout(() => msgDiv.innerHTML = '', 3000);
+      if (adminLoggedIn) loadAdminAppointments();
+    } else {
+      throw new Error(await res.text());
+    }
   } catch (err) {
     msgDiv.innerHTML = '❌ Server error.';
     msgDiv.style.color = '#fecaca';
@@ -425,25 +446,23 @@ document.querySelector('footer')?.addEventListener('click', () => {
   setTimeout(() => clickCount = 0, 800);
   if (clickCount === 3) {
     const pwd = prompt('Admin password:');
-    if (pwd === 'admin123') {
-      loginAdmin();
-    } else {
-      alert('Wrong password');
-    }
+    if (pwd) loginAdmin(pwd);
     clickCount = 0;
   }
 });
 
-async function loginAdmin() {
+async function loginAdmin(password) {
   try {
     const res = await fetch(`${API_BASE}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'admin123' }),
+      body: JSON.stringify({ password }),
       credentials: 'include'
     });
     const data = await res.json();
     if (data.success) {
+      adminToken = data.token;
+      localStorage.setItem('adminToken', adminToken);
       adminLoggedIn = true;
       document.getElementById('adminPanel').style.display = 'block';
       renderServices();
@@ -453,15 +472,17 @@ async function loginAdmin() {
       loadSocialLinks();
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
+        adminToken = null;
+        localStorage.removeItem('adminToken');
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
       };
     } else {
-      alert('Login failed');
+      alert('Wrong password');
     }
   } catch (err) {
-    alert('Error: ' + err.message);
+    alert('Login failed: ' + err.message);
   }
 }
 
@@ -476,9 +497,15 @@ function attachSiteImageButtons() {
   if (removeAbout) removeAbout.onclick = () => removeSiteImage('about');
 }
 
-// Auto-check session (with credentials)
-fetch(`${API_BASE}/api/appointments`, { credentials: 'include' })
-  .then(res => {
+// Auto-check token on page load
+const savedToken = localStorage.getItem('adminToken');
+if (savedToken) {
+  adminToken = savedToken;
+  // Verify token by calling a protected endpoint
+  fetch(`${API_BASE}/api/appointments`, {
+    headers: { 'Authorization': `Bearer ${adminToken}` },
+    credentials: 'include'
+  }).then(res => {
     if (res.status !== 403) {
       adminLoggedIn = true;
       document.getElementById('adminPanel').style.display = 'block';
@@ -489,13 +516,21 @@ fetch(`${API_BASE}/api/appointments`, { credentials: 'include' })
       loadSocialLinks();
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
+        adminToken = null;
+        localStorage.removeItem('adminToken');
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
       };
+    } else {
+      localStorage.removeItem('adminToken');
+      adminToken = null;
     }
-  })
-  .catch(() => {});
+  }).catch(() => {
+    localStorage.removeItem('adminToken');
+    adminToken = null;
+  });
+}
 
 // Mobile menu toggle
 const hamburger = document.getElementById('hamburger');
@@ -509,7 +544,7 @@ function escapeHtml(str) {
   return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
 }
 
-// Initial loads
+// Initial loads (public)
 loadServiceImages();
 loadSiteImages();
 loadTeam();

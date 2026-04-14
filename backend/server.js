@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -11,44 +10,22 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'retech_prod_secret_change_me';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Security middleware
 app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests, please try again later.'
-});
-app.use('/api/', limiter);
-
-// CORS – allow only your frontend domain
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 
-// Session – critical for cross‑domain (Netlify → Render)
-app.use(session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,          // required for HTTPS (Render)
-    httpOnly: true,
-    sameSite: 'none',      // allows cross‑site requests
-    maxAge: 24 * 60 * 60 * 1000
-  }
-}));
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
+app.use('/api/', limiter);
 
-// File upload setup
+let adminToken = null;
+
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 app.use('/uploads', express.static(uploadDir));
 
-// Multer with file validation
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -65,7 +42,6 @@ const fileFilter = (req, file, cb) => {
 };
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter });
 
-// Data persistence file
 const dataFile = path.join(__dirname, 'data.json');
 function readData() {
   if (!fs.existsSync(dataFile)) {
@@ -94,28 +70,29 @@ function sanitizeString(str) {
   return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
 }
 
-// Admin login
+// Admin login (token)
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
-    req.session.isAdmin = true;
-    return res.json({ success: true });
+    adminToken = Date.now() + '-' + Math.random().toString(36).substring(2);
+    res.json({ success: true, token: adminToken });
+  } else {
+    res.status(401).json({ success: false });
   }
-  res.status(401).json({ success: false });
 });
 
 app.post('/api/admin/logout', (req, res) => {
-  req.session.destroy();
+  adminToken = null;
   res.json({ success: true });
 });
 
 function isAdmin(req, res, next) {
-  if (req.session.isAdmin) return next();
+  const auth = req.headers.authorization;
+  if (auth && auth === `Bearer ${adminToken}`) return next();
   res.status(403).json({ error: 'Unauthorized' });
 }
 
 // ========== API endpoints ==========
-// Service images
 app.get('/api/service-images', (req, res) => {
   const data = readData();
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -140,7 +117,6 @@ app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), (re
   res.json({ success: true, url: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}` });
 });
 
-// Site images
 app.get('/api/site-images', (req, res) => {
   const data = readData();
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -183,7 +159,6 @@ app.delete('/api/site-image/:type', isAdmin, (req, res) => {
   }
 });
 
-// Social links
 app.get('/api/social-links', (req, res) => {
   const data = readData();
   res.json(data.socialLinks);
@@ -198,7 +173,6 @@ app.post('/api/social-links', isAdmin, (req, res) => {
   res.json({ success: true, socialLinks: data.socialLinks });
 });
 
-// Team members
 app.get('/api/team', (req, res) => {
   const data = readData();
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -261,7 +235,6 @@ app.delete('/api/team/:id', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Appointments
 app.get('/api/appointments', isAdmin, (req, res) => {
   const data = readData();
   res.json(data.appointments);
@@ -298,7 +271,6 @@ app.delete('/api/appointments', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Error handler for multer
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'FILE_TOO_LARGE') return res.status(413).json({ error: 'File too large (max 5MB)' });
