@@ -15,6 +15,8 @@ let serviceImages = {};
 let adminLoggedIn = false;
 let siteImages = { homeBackground: null, aboutImage: null };
 let teamMembers = [];
+let testimonials = [];
+let blogPosts = [];
 
 // Helper: API call with token
 async function apiCall(endpoint, options = {}) {
@@ -294,6 +296,224 @@ function showTeamModal(editId = null) {
   };
 }
 
+// ========== TESTIMONIALS ==========
+async function loadTestimonials() {
+  try {
+    const res = await fetch(`${API_BASE}/api/testimonials`, { credentials: 'include' });
+    testimonials = res.ok ? await res.json() : [];
+    renderTestimonials();
+    if (adminLoggedIn) renderTestimonialsAdmin();
+  } catch (err) { console.error(err); testimonials = []; renderTestimonials(); }
+}
+
+function renderTestimonials() {
+  const container = document.getElementById('testimonialsGrid');
+  if (!container) return;
+  if (testimonials.length === 0) {
+    container.innerHTML = '<p style="text-align:center;">No testimonials yet. Be the first to leave a review!</p>';
+    return;
+  }
+  container.innerHTML = testimonials.map(t => `
+    <div class="testimonial-card">
+      <div class="stars">${'★'.repeat(t.rating)}${'☆'.repeat(5-t.rating)}</div>
+      <p>${escapeHtml(t.content)}</p>
+      <h4>${escapeHtml(t.name)}</h4>
+      <span>${escapeHtml(t.role)}</span>
+    </div>
+  `).join('');
+}
+
+function renderTestimonialsAdmin() {
+  const container = document.getElementById('testimonialsAdminList');
+  if (!container) return;
+  if (testimonials.length === 0) {
+    container.innerHTML = '<p>No testimonials yet. Click "Add Testimonial".</p>';
+    return;
+  }
+  container.innerHTML = testimonials.map(t => `
+    <div style="border-bottom:1px solid #ccc; padding:10px;">
+      <div><strong>${escapeHtml(t.name)}</strong> (${escapeHtml(t.role)}) - ${t.rating}★</div>
+      <div>${escapeHtml(t.content.substring(0, 100))}...</div>
+      <button class="edit-testimonial-btn" data-id="${t.id}">✏️ Edit</button>
+      <button class="delete-testimonial-btn" data-id="${t.id}">🗑️ Delete</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.edit-testimonial-btn').forEach(btn => btn.addEventListener('click', () => showTestimonialModal(parseInt(btn.dataset.id))));
+  document.querySelectorAll('.delete-testimonial-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (confirm('Delete this testimonial?')) {
+      const token = localStorage.getItem('adminToken');
+      await fetch(`${API_BASE}/api/testimonials/${btn.dataset.id}`, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {}, credentials: 'include' });
+      loadTestimonials();
+    }
+  }));
+}
+
+function showTestimonialModal(editId = null) {
+  const existing = editId ? testimonials.find(t => t.id === editId) : null;
+  const modal = document.createElement('div');
+  modal.style.position = 'fixed'; modal.style.top = '0'; modal.style.left = '0';
+  modal.style.width = '100%'; modal.style.height = '100%';
+  modal.style.backgroundColor = 'rgba(0,0,0,0.7)'; modal.style.display = 'flex';
+  modal.style.alignItems = 'center'; modal.style.justifyContent = 'center'; modal.style.zIndex = '2000';
+  modal.innerHTML = `
+    <div style="background:white; padding:2rem; border-radius:24px; width:400px;">
+      <h3>${existing ? 'Edit Testimonial' : 'Add Testimonial'}</h3>
+      <input type="text" id="testimonialName" placeholder="Name" style="width:100%; margin:10px 0; padding:8px;" value="${existing ? escapeHtml(existing.name) : ''}">
+      <input type="text" id="testimonialRole" placeholder="Role (e.g., Business Owner)" style="width:100%; margin:10px 0; padding:8px;" value="${existing ? escapeHtml(existing.role) : ''}">
+      <textarea id="testimonialContent" placeholder="Testimonial text" rows="4" style="width:100%; margin:10px 0; padding:8px;">${existing ? escapeHtml(existing.content) : ''}</textarea>
+      <select id="testimonialRating" style="width:100%; margin:10px 0; padding:8px;">
+        ${[5,4,3,2,1].map(r => `<option value="${r}" ${existing && existing.rating === r ? 'selected' : ''}>${r} stars</option>`).join('')}
+      </select>
+      <button id="saveTestimonialBtn" style="background:#eab308; border:none; padding:8px 16px; border-radius:40px; cursor:pointer;">Save</button>
+      <button id="cancelTestimonialBtn" style="margin-left:10px;">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('cancelTestimonialBtn').onclick = () => modal.remove();
+  document.getElementById('saveTestimonialBtn').onclick = async () => {
+    const name = document.getElementById('testimonialName').value.trim();
+    const role = document.getElementById('testimonialRole').value.trim();
+    const content = document.getElementById('testimonialContent').value.trim();
+    const rating = parseInt(document.getElementById('testimonialRating').value);
+    if (!name || !content) return alert('Name and content required');
+    const token = localStorage.getItem('adminToken');
+    const url = existing ? `${API_BASE}/api/testimonials/${existing.id}` : `${API_BASE}/api/testimonials`;
+    const method = existing ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ name, role, content, rating }),
+      credentials: 'include'
+    });
+    if (res.ok) {
+      modal.remove();
+      loadTestimonials();
+    } else alert('Failed to save testimonial');
+  };
+}
+
+// ========== BLOG POSTS ==========
+async function loadBlogPosts() {
+  try {
+    const res = await fetch(`${API_BASE}/api/blog`, { credentials: 'include' });
+    blogPosts = res.ok ? await res.json() : [];
+    renderBlogPosts();
+    if (adminLoggedIn) renderBlogAdmin();
+  } catch (err) { console.error(err); blogPosts = []; renderBlogPosts(); }
+}
+
+function renderBlogPosts() {
+  const container = document.getElementById('blogGrid');
+  if (!container) return;
+  if (blogPosts.length === 0) {
+    container.innerHTML = '<p style="text-align:center;">No blog posts yet. Check back soon!</p>';
+    return;
+  }
+  container.innerHTML = blogPosts.map(post => `
+    <div class="blog-card">
+      ${post.imageUrl ? `<img src="${post.imageUrl}" style="width:100%; height:200px; object-fit:cover; border-radius:16px;">` : ''}
+      <h3>${escapeHtml(post.title)}</h3>
+      <small>${escapeHtml(post.date)}</small>
+      <p>${escapeHtml(post.summary)}</p>
+      <button class="read-more-btn" data-id="${post.id}" style="background:#eab308; border:none; border-radius:40px; padding:5px 12px; cursor:pointer;">Read More</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.read-more-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const post = blogPosts.find(p => p.id === parseInt(btn.dataset.id));
+      if (post) showBlogModal(post);
+    });
+  });
+}
+
+function showBlogModal(post) {
+  const modal = document.createElement('div');
+  modal.style.position = 'fixed'; modal.style.top = '0'; modal.style.left = '0';
+  modal.style.width = '100%'; modal.style.height = '100%';
+  modal.style.backgroundColor = 'rgba(0,0,0,0.8)'; modal.style.display = 'flex';
+  modal.style.alignItems = 'center'; modal.style.justifyContent = 'center'; modal.style.zIndex = '2000';
+  modal.innerHTML = `
+    <div style="background:white; padding:2rem; border-radius:24px; max-width:600px; max-height:80%; overflow:auto;">
+      <h2>${escapeHtml(post.title)}</h2>
+      <small>${escapeHtml(post.date)}</small>
+      ${post.imageUrl ? `<img src="${post.imageUrl}" style="width:100%; margin:1rem 0; border-radius:16px;">` : ''}
+      <div>${escapeHtml(post.content || post.summary)}</div>
+      <button id="closeModalBtn" style="margin-top:1rem; background:#eab308; border:none; padding:8px 16px; border-radius:40px;">Close</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('closeModalBtn').onclick = () => modal.remove();
+}
+
+function renderBlogAdmin() {
+  const container = document.getElementById('blogAdminList');
+  if (!container) return;
+  if (blogPosts.length === 0) {
+    container.innerHTML = '<p>No blog posts yet. Click "Add Blog Post".</p>';
+    return;
+  }
+  container.innerHTML = blogPosts.map(post => `
+    <div style="border-bottom:1px solid #ccc; padding:10px;">
+      <div><strong>${escapeHtml(post.title)}</strong> (${escapeHtml(post.date)})</div>
+      <div>${escapeHtml(post.summary.substring(0, 80))}...</div>
+      <button class="edit-blog-btn" data-id="${post.id}">✏️ Edit</button>
+      <button class="delete-blog-btn" data-id="${post.id}">🗑️ Delete</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.edit-blog-btn').forEach(btn => btn.addEventListener('click', () => showBlogModalAdmin(parseInt(btn.dataset.id))));
+  document.querySelectorAll('.delete-blog-btn').forEach(btn => btn.addEventListener('click', async () => {
+    if (confirm('Delete this blog post?')) {
+      const token = localStorage.getItem('adminToken');
+      await fetch(`${API_BASE}/api/blog/${btn.dataset.id}`, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {}, credentials: 'include' });
+      loadBlogPosts();
+    }
+  }));
+}
+
+function showBlogModalAdmin(editId = null) {
+  const existing = editId ? blogPosts.find(p => p.id === editId) : null;
+  const modal = document.createElement('div');
+  modal.style.position = 'fixed'; modal.style.top = '0'; modal.style.left = '0';
+  modal.style.width = '100%'; modal.style.height = '100%';
+  modal.style.backgroundColor = 'rgba(0,0,0,0.7)'; modal.style.display = 'flex';
+  modal.style.alignItems = 'center'; modal.style.justifyContent = 'center'; modal.style.zIndex = '2000';
+  modal.innerHTML = `
+    <div style="background:white; padding:2rem; border-radius:24px; width:500px; max-height:80%; overflow:auto;">
+      <h3>${existing ? 'Edit Blog Post' : 'Add Blog Post'}</h3>
+      <input type="text" id="blogTitle" placeholder="Title" style="width:100%; margin:10px 0; padding:8px;" value="${existing ? escapeHtml(existing.title) : ''}">
+      <input type="text" id="blogDate" placeholder="Date (YYYY-MM-DD)" style="width:100%; margin:10px 0; padding:8px;" value="${existing ? existing.date : new Date().toISOString().split('T')[0]}">
+      <input type="text" id="blogImageUrl" placeholder="Image URL (optional)" style="width:100%; margin:10px 0; padding:8px;" value="${existing ? existing.imageUrl || '' : ''}">
+      <textarea id="blogSummary" placeholder="Short summary" rows="2" style="width:100%; margin:10px 0; padding:8px;">${existing ? escapeHtml(existing.summary) : ''}</textarea>
+      <textarea id="blogContent" placeholder="Full content (optional)" rows="5" style="width:100%; margin:10px 0; padding:8px;">${existing ? escapeHtml(existing.content || '') : ''}</textarea>
+      <button id="saveBlogBtn" style="background:#eab308; border:none; padding:8px 16px; border-radius:40px; cursor:pointer;">Save</button>
+      <button id="cancelBlogBtn" style="margin-left:10px;">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('cancelBlogBtn').onclick = () => modal.remove();
+  document.getElementById('saveBlogBtn').onclick = async () => {
+    const title = document.getElementById('blogTitle').value.trim();
+    const date = document.getElementById('blogDate').value.trim();
+    const imageUrl = document.getElementById('blogImageUrl').value.trim();
+    const summary = document.getElementById('blogSummary').value.trim();
+    const content = document.getElementById('blogContent').value.trim();
+    if (!title || !summary) return alert('Title and summary required');
+    const token = localStorage.getItem('adminToken');
+    const url = existing ? `${API_BASE}/api/blog/${existing.id}` : `${API_BASE}/api/blog`;
+    const method = existing ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ title, date, imageUrl, summary, content }),
+      credentials: 'include'
+    });
+    if (res.ok) {
+      modal.remove();
+      loadBlogPosts();
+    } else alert('Failed to save blog post');
+  };
+}
+
 // ========== BOOKING ==========
 document.getElementById('submitBookingBtn')?.addEventListener('click', async () => {
   const name = document.getElementById('apptName').value.trim();
@@ -366,11 +586,15 @@ async function loginAdmin(password) {
       localStorage.setItem('adminToken', data.token);
       adminLoggedIn = true;
       document.getElementById('adminPanel').style.display = 'block';
+      // Load all data
       renderServices();
       loadAdminAppointments();
       attachSiteImageButtons();
       loadTeam();
+      loadTestimonials();
+      loadBlogPosts();
       loadSocialLinks();
+      // Attach admin button events
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
         localStorage.removeItem('adminToken');
@@ -378,8 +602,9 @@ async function loginAdmin(password) {
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
       };
-      // Attach team button and social save
       document.getElementById('addTeamMemberBtn').onclick = () => showTeamModal();
+      document.getElementById('addTestimonialBtn').onclick = () => showTestimonialModal();
+      document.getElementById('addBlogPostBtn').onclick = () => showBlogModalAdmin();
       document.getElementById('saveSocialLinksBtn').onclick = saveSocialLinks;
     } else alert('Wrong password');
   } catch (err) { alert('Login failed: ' + err.message); }
@@ -404,6 +629,8 @@ if (savedToken) {
         loadAdminAppointments();
         attachSiteImageButtons();
         loadTeam();
+        loadTestimonials();
+        loadBlogPosts();
         loadSocialLinks();
         document.getElementById('adminLogoutBtn').onclick = async () => {
           await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
@@ -413,6 +640,8 @@ if (savedToken) {
           renderServices();
         };
         document.getElementById('addTeamMemberBtn').onclick = () => showTeamModal();
+        document.getElementById('addTestimonialBtn').onclick = () => showTestimonialModal();
+        document.getElementById('addBlogPostBtn').onclick = () => showBlogModalAdmin();
         document.getElementById('saveSocialLinksBtn').onclick = saveSocialLinks;
       } else localStorage.removeItem('adminToken');
     }).catch(() => localStorage.removeItem('adminToken'));
@@ -430,4 +659,6 @@ function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<'
 loadServiceImages();
 loadSiteImages();
 loadTeam();
+loadTestimonials();
+loadBlogPosts();
 loadSocialLinks();

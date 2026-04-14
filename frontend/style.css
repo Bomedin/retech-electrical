@@ -18,6 +18,7 @@ body {
   padding: 0 1.5rem;
 }
 
+/* Header & Navigation */
 .header {
   background: #0a2b3e;
   color: white;
@@ -68,6 +69,7 @@ body {
   cursor: pointer;
 }
 
+/* Hero */
 .hero {
   background: linear-gradient(135deg, #0a2b3e, #1e4a6e);
   color: white;
@@ -89,6 +91,7 @@ body {
   opacity: 0.9;
 }
 
+/* Buttons */
 .btn {
   display: inline-block;
   padding: 0.8rem 1.8rem;
@@ -130,6 +133,7 @@ body {
   font-weight: 600;
 }
 
+/* About */
 .about {
   padding: 5rem 0;
   background: white;
@@ -187,6 +191,7 @@ body {
   box-shadow: 0 20px 30px -12px rgba(0,0,0,0.1);
 }
 
+/* Services */
 .services {
   padding: 5rem 0;
   background: #f1f5f9;
@@ -280,6 +285,7 @@ body {
   display: block;
 }
 
+/* Testimonials */
 .testimonials {
   padding: 5rem 0;
   background: white;
@@ -315,6 +321,7 @@ body {
   margin-bottom: 0.2rem;
 }
 
+/* Team */
 .team {
   padding: 5rem 0;
   background: #f8fafc;
@@ -357,6 +364,59 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Blog */
+.blog {
+  padding: 5rem 0;
+  background: #f8fafc;
+}
+
+.blog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.blog-card {
+  background: white;
+  border-radius: 24px;
+  overflow: hidden;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.blog-card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 16px;
+  margin-bottom: 1rem;
+}
+
+.blog-card h3 {
+  font-size: 1.3rem;
+  margin-bottom: 0.3rem;
+}
+
+.blog-card small {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.blog-card p {
+  margin: 0.8rem 0;
+}
+
+.read-more-btn {
+  background: #eab308;
+  border: none;
+  border-radius: 40px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+/* Contact */
 .contact {
   padding: 5rem 0;
   background: #0a2b3e;
@@ -435,6 +495,7 @@ body {
   text-align: center;
 }
 
+/* Admin Panel */
 .admin-panel {
   background: #fef9e3;
   border-top: 4px solid #eab308;
@@ -476,11 +537,11 @@ body {
 .image-preview {
   max-width: 100px;
   max-height: 100px;
-  border-radius: 12px;
+  border-radius: 8px;
   margin: 5px 0;
-  border: 1px solid #ddd;
 }
 
+/* Footer */
 footer {
   background: #0f172a;
   color: #94a3b8;
@@ -489,6 +550,7 @@ footer {
   cursor: pointer;
 }
 
+/* Responsive */
 @media (max-width: 768px) {
   .hamburger {
     display: block;

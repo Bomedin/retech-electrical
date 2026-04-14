@@ -18,14 +18,11 @@ app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
-// Token storage (in-memory)
 let currentToken = null;
 
-// Upload directory
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
@@ -37,7 +34,6 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(uploadDir));
 
-// Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -47,7 +43,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Data file (persistent JSON)
 const dataFile = path.join(__dirname, 'data.json');
 function readData() {
   if (!fs.existsSync(dataFile)) {
@@ -63,7 +58,9 @@ function readData() {
       socialLinks: {
         whatsapp: "https://wa.me/233265193861",
         facebook: "https://www.facebook.com/profile.php?id=100086465723456"
-      }
+      },
+      testimonials: [],
+      blogPosts: []
     };
     fs.writeFileSync(dataFile, JSON.stringify(defaultData, null, 2));
     return defaultData;
@@ -78,13 +75,10 @@ function sanitizeString(str) {
 
 // ========== AUTHENTICATION ==========
 app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (password === ADMIN_PASSWORD) {
+  if (req.body.password === ADMIN_PASSWORD) {
     currentToken = Date.now() + '-' + Math.random().toString(36).substring(2);
     res.json({ success: true, token: currentToken });
-  } else {
-    res.status(401).json({ success: false });
-  }
+  } else res.status(401).json({ success: false });
 });
 
 app.post('/api/admin/logout', (req, res) => {
@@ -93,18 +87,14 @@ app.post('/api/admin/logout', (req, res) => {
 });
 
 function isAdmin(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader === `Bearer ${currentToken}`) return next();
+  const auth = req.headers.authorization;
+  if (auth && auth === `Bearer ${currentToken}`) return next();
   res.status(403).json({ error: 'Unauthorized' });
 }
 
-// Debug endpoint (optional, for testing)
+// Debug endpoint
 app.get('/api/debug-token', (req, res) => {
-  res.json({ 
-    received: req.headers.authorization, 
-    expected: currentToken ? `Bearer ${currentToken}` : null,
-    isAdmin: !!currentToken
-  });
+  res.json({ received: req.headers.authorization, expected: currentToken ? `Bearer ${currentToken}` : null });
 });
 
 // ========== SERVICE IMAGES ==========
@@ -170,9 +160,7 @@ app.delete('/api/site-image/:type', isAdmin, (req, res) => {
     data.siteImages[key] = null;
     writeData(data);
     res.json({ success: true });
-  } else {
-    res.status(404).json({ error: 'No image to remove' });
-  }
+  } else res.status(404).json({ error: 'No image to remove' });
 });
 
 // ========== SOCIAL LINKS ==========
@@ -253,6 +241,100 @@ app.delete('/api/team/:id', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ========== TESTIMONIALS ==========
+app.get('/api/testimonials', (req, res) => {
+  const data = readData();
+  res.json(data.testimonials || []);
+});
+
+app.post('/api/testimonials', isAdmin, (req, res) => {
+  const { name, role, content, rating } = req.body;
+  if (!name || !content) return res.status(400).json({ error: 'Name and content required' });
+  const data = readData();
+  if (!data.testimonials) data.testimonials = [];
+  const newTestimonial = {
+    id: Date.now(),
+    name: sanitizeString(name),
+    role: sanitizeString(role || 'Customer'),
+    content: sanitizeString(content),
+    rating: rating || 5,
+    createdAt: new Date().toISOString()
+  };
+  data.testimonials.unshift(newTestimonial);
+  writeData(data);
+  res.json({ success: true, testimonial: newTestimonial });
+});
+
+app.put('/api/testimonials/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { name, role, content, rating } = req.body;
+  const data = readData();
+  const index = data.testimonials.findIndex(t => t.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Not found' });
+  if (name) data.testimonials[index].name = sanitizeString(name);
+  if (role !== undefined) data.testimonials[index].role = sanitizeString(role);
+  if (content) data.testimonials[index].content = sanitizeString(content);
+  if (rating) data.testimonials[index].rating = rating;
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.delete('/api/testimonials/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = readData();
+  data.testimonials = data.testimonials.filter(t => t.id !== id);
+  writeData(data);
+  res.json({ success: true });
+});
+
+// ========== BLOG POSTS ==========
+app.get('/api/blog', (req, res) => {
+  const data = readData();
+  res.json(data.blogPosts || []);
+});
+
+app.post('/api/blog', isAdmin, (req, res) => {
+  const { title, summary, content, imageUrl } = req.body;
+  if (!title || !summary) return res.status(400).json({ error: 'Title and summary required' });
+  const data = readData();
+  if (!data.blogPosts) data.blogPosts = [];
+  const newPost = {
+    id: Date.now(),
+    title: sanitizeString(title),
+    summary: sanitizeString(summary),
+    content: content ? sanitizeString(content) : '',
+    imageUrl: imageUrl || null,
+    date: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString()
+  };
+  data.blogPosts.unshift(newPost);
+  writeData(data);
+  res.json({ success: true, post: newPost });
+});
+
+app.put('/api/blog/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { title, summary, content, imageUrl, date } = req.body;
+  const data = readData();
+  const index = data.blogPosts.findIndex(p => p.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Not found' });
+  if (title) data.blogPosts[index].title = sanitizeString(title);
+  if (summary) data.blogPosts[index].summary = sanitizeString(summary);
+  if (content !== undefined) data.blogPosts[index].content = sanitizeString(content);
+  if (imageUrl !== undefined) data.blogPosts[index].imageUrl = imageUrl;
+  if (date) data.blogPosts[index].date = date;
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.delete('/api/blog/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = readData();
+  data.blogPosts = data.blogPosts.filter(p => p.id !== id);
+  writeData(data);
+  res.json({ success: true });
+});
+
 // ========== APPOINTMENTS ==========
 app.get('/api/appointments', isAdmin, (req, res) => {
   const data = readData();
@@ -290,7 +372,6 @@ app.delete('/api/appointments', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   if (err instanceof multer.MulterError) {
