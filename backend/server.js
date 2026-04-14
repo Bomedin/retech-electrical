@@ -22,7 +22,7 @@ const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
 // Token storage (in-memory)
-let adminToken = null;
+let currentToken = null;
 
 // File upload setup
 const uploadDir = path.join(__dirname, 'uploads');
@@ -36,14 +36,7 @@ const storage = multer.diskStorage({
     cb(null, unique + path.extname(file.originalname));
   }
 });
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  if (extname && mimetype) return cb(null, true);
-  cb(new Error('Only images are allowed'));
-};
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter });
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Data file
 const dataFile = path.join(__dirname, 'data.json');
@@ -74,14 +67,14 @@ function sanitizeString(str) {
   return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
 }
 
-// Admin login (token)
+// ========== AUTHENTICATION ==========
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   console.log('Login attempt with password:', password);
   if (password === ADMIN_PASSWORD) {
-    adminToken = Date.now() + '-' + Math.random().toString(36).substring(2);
-    console.log('Login successful, token generated:', adminToken);
-    res.json({ success: true, token: adminToken });
+    currentToken = Date.now() + '-' + Math.random().toString(36).substring(2);
+    console.log('Login successful, token generated:', currentToken);
+    res.json({ success: true, token: currentToken });
   } else {
     console.log('Login failed: wrong password');
     res.status(401).json({ success: false });
@@ -89,14 +82,14 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.post('/api/admin/logout', (req, res) => {
-  adminToken = null;
+  currentToken = null;
   res.json({ success: true });
 });
 
 function isAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
   console.log('Authorization header received:', authHeader);
-  if (authHeader && authHeader === `Bearer ${adminToken}`) {
+  if (authHeader && authHeader === `Bearer ${currentToken}`) {
     console.log('Token matches, authorized');
     return next();
   }
@@ -104,7 +97,7 @@ function isAdmin(req, res, next) {
   res.status(403).json({ error: 'Unauthorized' });
 }
 
-// Debug endpoint (temporary, for testing)
+// Debug endpoint
 app.get('/api/debug-token', (req, res) => {
   res.json({ 
     received: req.headers.authorization, 
@@ -113,7 +106,7 @@ app.get('/api/debug-token', (req, res) => {
   });
 });
 
-// ========== API endpoints (with logging on protected routes) ==========
+// ========== SERVICE IMAGES ==========
 app.get('/api/service-images', (req, res) => {
   const data = readData();
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -125,12 +118,8 @@ app.get('/api/service-images', (req, res) => {
 });
 
 app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), (req, res) => {
-  console.log('Upload request for service:', req.params.serviceName);
-  if (!req.file) {
-    console.log('No file received');
-    return res.status(400).json({ error: 'No file' });
-  }
   const serviceName = decodeURIComponent(req.params.serviceName);
+  if (!req.file) return res.status(400).json({ error: 'No file' });
   const data = readData();
   const old = data.serviceImages[serviceName];
   if (old) {
@@ -139,12 +128,175 @@ app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), (re
   }
   data.serviceImages[serviceName] = req.file.filename;
   writeData(data);
-  console.log('File saved:', req.file.filename);
   res.json({ success: true, url: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}` });
 });
 
-// Site images, team, appointments endpoints similarly protected (same as before)
-// ... (I'll include them but for brevity assume they are identical to the previous token-based version)
-// Since we already have the full token-based server.js, just ensure all protected routes use isAdmin.
+// ========== SITE IMAGES ==========
+app.get('/api/site-images', (req, res) => {
+  const data = readData();
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  res.json({
+    homeBackground: data.siteImages.homeBackground ? `${baseUrl}/uploads/${data.siteImages.homeBackground}` : null,
+    aboutImage: data.siteImages.aboutImage ? `${baseUrl}/uploads/${data.siteImages.aboutImage}` : null
+  });
+});
 
-// For brevity, I'll include the full server.js in the final answer.
+app.post('/api/site-image/:type', isAdmin, upload.single('image'), (req, res) => {
+  const type = req.params.type;
+  if (type !== 'home' && type !== 'about') return res.status(400).json({ error: 'Invalid type' });
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const data = readData();
+  const key = type === 'home' ? 'homeBackground' : 'aboutImage';
+  const old = data.siteImages[key];
+  if (old) {
+    const oldPath = path.join(uploadDir, old);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  data.siteImages[key] = req.file.filename;
+  writeData(data);
+  res.json({ success: true, url: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}` });
+});
+
+app.delete('/api/site-image/:type', isAdmin, (req, res) => {
+  const type = req.params.type;
+  if (type !== 'home' && type !== 'about') return res.status(400).json({ error: 'Invalid type' });
+  const data = readData();
+  const key = type === 'home' ? 'homeBackground' : 'aboutImage';
+  const old = data.siteImages[key];
+  if (old) {
+    const oldPath = path.join(uploadDir, old);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    data.siteImages[key] = null;
+    writeData(data);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'No image to remove' });
+  }
+});
+
+// ========== SOCIAL LINKS ==========
+app.get('/api/social-links', (req, res) => {
+  const data = readData();
+  res.json(data.socialLinks);
+});
+
+app.post('/api/social-links', isAdmin, (req, res) => {
+  const { whatsapp, facebook } = req.body;
+  const data = readData();
+  if (whatsapp) data.socialLinks.whatsapp = whatsapp;
+  if (facebook) data.socialLinks.facebook = facebook;
+  writeData(data);
+  res.json({ success: true, socialLinks: data.socialLinks });
+});
+
+// ========== TEAM MEMBERS ==========
+app.get('/api/team', (req, res) => {
+  const data = readData();
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const members = data.teamMembers.map(m => ({
+    id: m.id,
+    name: sanitizeString(m.name),
+    profession: sanitizeString(m.profession),
+    imageUrl: m.imageFilename ? `${baseUrl}/uploads/${m.imageFilename}` : null
+  }));
+  res.json(members);
+});
+
+app.post('/api/team', isAdmin, upload.single('image'), (req, res) => {
+  const { name, profession } = req.body;
+  if (!name || !profession) return res.status(400).json({ error: 'Name and profession required' });
+  const data = readData();
+  const newMember = {
+    id: Date.now(),
+    name: sanitizeString(name),
+    profession: sanitizeString(profession),
+    imageFilename: req.file ? req.file.filename : null
+  };
+  data.teamMembers.push(newMember);
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.put('/api/team/:id', isAdmin, upload.single('image'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const { name, profession } = req.body;
+  const data = readData();
+  const index = data.teamMembers.findIndex(m => m.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Not found' });
+  if (name) data.teamMembers[index].name = sanitizeString(name);
+  if (profession) data.teamMembers[index].profession = sanitizeString(profession);
+  if (req.file) {
+    const old = data.teamMembers[index].imageFilename;
+    if (old) {
+      const oldPath = path.join(uploadDir, old);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    data.teamMembers[index].imageFilename = req.file.filename;
+  }
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.delete('/api/team/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = readData();
+  const index = data.teamMembers.findIndex(m => m.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Not found' });
+  const oldFile = data.teamMembers[index].imageFilename;
+  if (oldFile) {
+    const oldPath = path.join(uploadDir, oldFile);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  data.teamMembers.splice(index, 1);
+  writeData(data);
+  res.json({ success: true });
+});
+
+// ========== APPOINTMENTS ==========
+app.get('/api/appointments', isAdmin, (req, res) => {
+  const data = readData();
+  res.json(data.appointments);
+});
+
+app.post('/api/appointments', (req, res) => {
+  const { name, location, phone } = req.body;
+  if (!name || !location || !phone) return res.status(400).json({ error: 'Missing fields' });
+  const data = readData();
+  const newAppointment = {
+    id: Date.now(),
+    name: sanitizeString(name),
+    location: sanitizeString(location),
+    phone: sanitizeString(phone),
+    createdAt: new Date().toISOString()
+  };
+  data.appointments.unshift(newAppointment);
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.delete('/api/appointments/:id', isAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = readData();
+  data.appointments = data.appointments.filter(a => a.id !== id);
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.delete('/api/appointments', isAdmin, (req, res) => {
+  const data = readData();
+  data.appointments = [];
+  writeData(data);
+  res.json({ success: true });
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'FILE_TOO_LARGE') return res.status(413).json({ error: 'File too large (max 5MB)' });
+    return res.status(400).json({ error: err.message });
+  }
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));

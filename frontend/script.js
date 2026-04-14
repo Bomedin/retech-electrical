@@ -13,14 +13,14 @@ const servicesList = [
 
 let serviceImages = {};
 let adminLoggedIn = false;
-let adminToken = null;
 let siteImages = { homeBackground: null, aboutImage: null };
 let teamMembers = [];
 
-// Helper for JSON API calls (automatically adds token if available)
+// Helper for API calls with token
 async function apiCall(endpoint, options = {}) {
+  const token = localStorage.getItem('adminToken');
   const headers = { 'Content-Type': 'application/json' };
-  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
     headers,
@@ -30,10 +30,11 @@ async function apiCall(endpoint, options = {}) {
   return res.json();
 }
 
-// Helper for file uploads (FormData) – adds token header
+// Helper for file uploads with token
 async function uploadWithToken(url, formData) {
+  const token = localStorage.getItem('adminToken');
   const headers = {};
-  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(url, {
     method: 'POST',
     body: formData,
@@ -43,7 +44,7 @@ async function uploadWithToken(url, formData) {
   return res;
 }
 
-// ========== Services ==========
+// ========== SERVICES ==========
 async function loadServiceImages() {
   try {
     const images = await apiCall('/api/service-images');
@@ -110,7 +111,7 @@ async function uploadImageForService(serviceName) {
   input.click();
 }
 
-// ========== Site Images ==========
+// ========== SITE IMAGES ==========
 async function loadSiteImages() {
   try {
     const data = await apiCall('/api/site-images');
@@ -180,11 +181,10 @@ async function uploadSiteImage(type) {
 async function removeSiteImage(type) {
   if (!confirm(`Remove ${type === 'home' ? 'home background' : 'about'} image?`)) return;
   try {
-    const headers = {};
-    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+    const token = localStorage.getItem('adminToken');
     const res = await fetch(`${API_BASE}/api/site-image/${type}`, {
       method: 'DELETE',
-      headers,
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       credentials: 'include'
     });
     if (res.ok) {
@@ -208,7 +208,7 @@ async function removeSiteImage(type) {
   }
 }
 
-// ========== Social Links ==========
+// ========== SOCIAL LINKS ==========
 async function loadSocialLinks() {
   try {
     const res = await fetch(`${API_BASE}/api/social-links`, { credentials: 'include' });
@@ -251,7 +251,7 @@ async function saveSocialLinks() {
   }
 }
 
-// ========== Team ==========
+// ========== TEAM ==========
 async function loadTeam() {
   try {
     const res = await fetch(`${API_BASE}/api/team`, { credentials: 'include' });
@@ -303,9 +303,12 @@ function renderTeamAdmin() {
   document.querySelectorAll('.delete-team-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (confirm('Delete this team member?')) {
-        const headers = {};
-        if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
-        await fetch(`${API_BASE}/api/team/${btn.dataset.id}`, { method: 'DELETE', headers, credentials: 'include' });
+        const token = localStorage.getItem('adminToken');
+        await fetch(`${API_BASE}/api/team/${btn.dataset.id}`, {
+          method: 'DELETE',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          credentials: 'include'
+        });
         loadTeam();
       }
     });
@@ -351,10 +354,11 @@ function showTeamModal(editId = null) {
     formData.append('profession', profession);
     if (fileInput.files[0]) formData.append('image', fileInput.files[0]);
     
+    const token = localStorage.getItem('adminToken');
     const url = member ? `${API_BASE}/api/team/${member.id}` : `${API_BASE}/api/team`;
     const method = member ? 'PUT' : 'POST';
     const headers = {};
-    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(url, { method, body: formData, headers, credentials: 'include' });
     if (res.ok) {
       modal.remove();
@@ -365,7 +369,7 @@ function showTeamModal(editId = null) {
   };
 }
 
-// ========== Booking ==========
+// ========== BOOKING ==========
 document.getElementById('submitBookingBtn')?.addEventListener('click', async () => {
   const name = document.getElementById('apptName').value.trim();
   const location = document.getElementById('apptLocation').value.trim();
@@ -402,7 +406,7 @@ document.getElementById('submitBookingBtn')?.addEventListener('click', async () 
   }
 });
 
-// ========== Admin Appointments ==========
+// ========== ADMIN APPOINTMENTS ==========
 async function loadAdminAppointments() {
   try {
     const apts = await apiCall('/api/appointments');
@@ -439,7 +443,7 @@ document.getElementById('clearAllAppointmentsBtn')?.addEventListener('click', as
   }
 });
 
-// ========== Admin Login ==========
+// ========== ADMIN LOGIN ==========
 let clickCount = 0;
 document.querySelector('footer')?.addEventListener('click', () => {
   clickCount++;
@@ -461,8 +465,7 @@ async function loginAdmin(password) {
     });
     const data = await res.json();
     if (data.success) {
-      adminToken = data.token;
-      localStorage.setItem('adminToken', adminToken);
+      localStorage.setItem('adminToken', data.token);
       adminLoggedIn = true;
       document.getElementById('adminPanel').style.display = 'block';
       renderServices();
@@ -472,7 +475,6 @@ async function loginAdmin(password) {
       loadSocialLinks();
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
-        adminToken = null;
         localStorage.removeItem('adminToken');
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
@@ -500,10 +502,8 @@ function attachSiteImageButtons() {
 // Auto-check token on page load
 const savedToken = localStorage.getItem('adminToken');
 if (savedToken) {
-  adminToken = savedToken;
-  // Verify token by calling a protected endpoint
   fetch(`${API_BASE}/api/appointments`, {
-    headers: { 'Authorization': `Bearer ${adminToken}` },
+    headers: { 'Authorization': `Bearer ${savedToken}` },
     credentials: 'include'
   }).then(res => {
     if (res.status !== 403) {
@@ -516,7 +516,6 @@ if (savedToken) {
       loadSocialLinks();
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
-        adminToken = null;
         localStorage.removeItem('adminToken');
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
@@ -524,12 +523,8 @@ if (savedToken) {
       };
     } else {
       localStorage.removeItem('adminToken');
-      adminToken = null;
     }
-  }).catch(() => {
-    localStorage.removeItem('adminToken');
-    adminToken = null;
-  });
+  }).catch(() => localStorage.removeItem('adminToken'));
 }
 
 // Mobile menu toggle
@@ -544,7 +539,7 @@ function escapeHtml(str) {
   return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
 }
 
-// Initial loads (public)
+// Initial loads
 loadServiceImages();
 loadSiteImages();
 loadTeam();
