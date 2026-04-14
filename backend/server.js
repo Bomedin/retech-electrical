@@ -21,7 +21,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests, please try again later.'
 });
@@ -36,10 +36,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: true,          // required for HTTPS (Render uses HTTPS)
+    secure: true,          // required for HTTPS (Render)
     httpOnly: true,
     sameSite: 'none',      // allows cross‑site requests
-    maxAge: 24 * 60 * 60 * 1000  // 24 hours
+    maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
