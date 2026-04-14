@@ -12,9 +12,9 @@ const PORT = process.env.PORT || 5000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// CORS – allow your Netlify domain
+// Security middleware with cross-origin resource policy
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
-app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -24,11 +24,19 @@ app.use('/api/', limiter);
 // Token storage (in-memory)
 let currentToken = null;
 
-// File upload setup
+// Upload directory
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-app.use('/uploads', express.static(uploadDir));
 
+// Serve uploaded images with proper CORS headers
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', FRONTEND_URL);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  next();
+}, express.static(uploadDir));
+
+// Multer configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -70,13 +78,10 @@ function sanitizeString(str) {
 // ========== AUTHENTICATION ==========
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
-  console.log('Login attempt with password:', password);
   if (password === ADMIN_PASSWORD) {
     currentToken = Date.now() + '-' + Math.random().toString(36).substring(2);
-    console.log('Login successful, token generated:', currentToken);
     res.json({ success: true, token: currentToken });
   } else {
-    console.log('Login failed: wrong password');
     res.status(401).json({ success: false });
   }
 });
@@ -88,12 +93,7 @@ app.post('/api/admin/logout', (req, res) => {
 
 function isAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
-  console.log('Authorization header received:', authHeader);
-  if (authHeader && authHeader === `Bearer ${currentToken}`) {
-    console.log('Token matches, authorized');
-    return next();
-  }
-  console.log('Unauthorized: token mismatch or missing');
+  if (authHeader && authHeader === `Bearer ${currentToken}`) return next();
   res.status(403).json({ error: 'Unauthorized' });
 }
 
