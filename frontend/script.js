@@ -1,4 +1,4 @@
-const API_BASE = 'https://retech-electrical.onrender.com';
+const API_BASE = 'https://retech-electrical.onrender.com'; // <-- CHANGE to your actual Render URL
 
 const servicesList = [
   { name: "Electrical Installation", icon: "fa-bolt", desc: "Professional installation for residential & commercial properties." },
@@ -448,18 +448,14 @@ async function loginAdmin() {
       document.getElementById('adminPanel').style.display = 'block';
       renderServices();
       loadAdminAppointments();
-      await loadSiteImages();
-      await loadTeam();
-      await loadSocialLinks();
       attachSiteImageButtons();
-      document.getElementById('addTeamMemberBtn').onclick = () => showTeamModal();
-      document.getElementById('saveSocialLinksBtn').onclick = saveSocialLinks;
+      loadTeam();
+      loadSocialLinks();
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
-        alert('Logged out');
       };
     } else {
       alert('Login failed');
@@ -480,7 +476,7 @@ function attachSiteImageButtons() {
   if (removeAbout) removeAbout.onclick = () => removeSiteImage('about');
 }
 
-// Auto-check session
+// Auto-check session (with credentials)
 fetch(`${API_BASE}/api/appointments`, { credentials: 'include' })
   .then(res => {
     if (res.status !== 403) {
@@ -488,28 +484,18 @@ fetch(`${API_BASE}/api/appointments`, { credentials: 'include' })
       document.getElementById('adminPanel').style.display = 'block';
       renderServices();
       loadAdminAppointments();
-      loadSiteImages();
+      attachSiteImageButtons();
       loadTeam();
       loadSocialLinks();
-      attachSiteImageButtons();
-      document.getElementById('addTeamMemberBtn').onclick = () => showTeamModal();
-      document.getElementById('saveSocialLinksBtn').onclick = saveSocialLinks;
       document.getElementById('adminLogoutBtn').onclick = async () => {
         await fetch(`${API_BASE}/api/admin/logout`, { method: 'POST', credentials: 'include' });
         adminLoggedIn = false;
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
-        alert('Logged out');
       };
-    } else {
-      loadTeam();
-      loadSocialLinks();
     }
   })
-  .catch(() => {
-    loadTeam();
-    loadSocialLinks();
-  });
+  .catch(() => {});
 
 // Mobile menu toggle
 const hamburger = document.getElementById('hamburger');
@@ -523,7 +509,7 @@ function escapeHtml(str) {
   return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
 }
 
-// Initial loads (public)
+// Initial loads
 loadServiceImages();
 loadSiteImages();
 loadTeam();
