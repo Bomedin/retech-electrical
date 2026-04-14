@@ -33,8 +33,8 @@ async function apiCall(endpoint, options = {}) {
 // Helper: File upload with token
 async function uploadWithToken(url, formData) {
   const token = localStorage.getItem('adminToken');
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token) throw new Error('No token found. Please login again.');
+  const headers = { 'Authorization': `Bearer ${token}` };
   const res = await fetch(url, { method: 'POST', body: formData, headers, credentials: 'include' });
   return res;
 }
@@ -57,7 +57,7 @@ function renderServices() {
   grid.innerHTML = servicesList.map(service => {
     const imageUrl = serviceImages[service.name];
     const imgHtml = imageUrl
-      ? `<img src="${imageUrl}" class="service-image" alt="${service.name}" style="width:100%; height:160px; object-fit:cover; border-radius:16px; margin-top:1rem;">`
+      ? `<img src="${imageUrl}" class="service-image" style="width:100%; height:160px; object-fit:cover; border-radius:16px; margin-top:1rem;">`
       : `<div class="service-image-placeholder" style="width:100%; height:160px; background:#e2e8f0; border-radius:16px; display:flex; align-items:center; justify-content:center; margin-top:1rem;">📷 No image</div>`;
     return `
       <div class="service-card" style="position:relative; background:white; border-radius:24px; padding:1.5rem; box-shadow:0 8px 20px rgba(0,0,0,0.05);">
@@ -89,13 +89,8 @@ async function uploadImageForService(serviceName) {
     if (!file) return;
     const formData = new FormData();
     formData.append('image', file);
-    const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, {
-        method: 'POST',
-        body: formData,
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await uploadWithToken(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, formData);
       if (res.ok) {
         const data = await res.json();
         serviceImages[serviceName] = data.url;
@@ -145,13 +140,8 @@ async function uploadSiteImage(type) {
     if (!file) return;
     const formData = new FormData();
     formData.append('image', file);
-    const token = localStorage.getItem('adminToken');
     try {
-      const res = await fetch(`${API_BASE}/api/site-image/${type}`, {
-        method: 'POST',
-        body: formData,
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await uploadWithToken(`${API_BASE}/api/site-image/${type}`, formData);
       if (res.ok) {
         const data = await res.json();
         if (type === 'home') siteImages.homeBackground = data.url;
@@ -388,6 +378,7 @@ async function loginAdmin(password) {
         document.getElementById('adminPanel').style.display = 'none';
         renderServices();
       };
+      // Attach team button and social save
       document.getElementById('addTeamMemberBtn').onclick = () => showTeamModal();
       document.getElementById('saveSocialLinksBtn').onclick = saveSocialLinks;
     } else alert('Wrong password');

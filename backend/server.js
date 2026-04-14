@@ -12,12 +12,13 @@ const PORT = process.env.PORT || 5000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Security middleware with cross-origin resource policy
+// Security middleware – allow cross-origin resource sharing for images
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Rate limiting
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
@@ -28,7 +29,7 @@ let currentToken = null;
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-// Serve uploaded images with proper CORS headers
+// Serve uploaded images with CORP headers
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Origin', FRONTEND_URL);
@@ -36,7 +37,7 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(uploadDir));
 
-// Multer configuration
+// Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -46,7 +47,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Data file
+// Data file (persistent JSON)
 const dataFile = path.join(__dirname, 'data.json');
 function readData() {
   if (!fs.existsSync(dataFile)) {
@@ -97,7 +98,7 @@ function isAdmin(req, res, next) {
   res.status(403).json({ error: 'Unauthorized' });
 }
 
-// Debug endpoint
+// Debug endpoint (optional, for testing)
 app.get('/api/debug-token', (req, res) => {
   res.json({ 
     received: req.headers.authorization, 
@@ -189,7 +190,7 @@ app.post('/api/social-links', isAdmin, (req, res) => {
   res.json({ success: true, socialLinks: data.socialLinks });
 });
 
-// ========== TEAM MEMBERS ==========
+// ========== TEAM ==========
 app.get('/api/team', (req, res) => {
   const data = readData();
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -289,7 +290,7 @@ app.delete('/api/appointments', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Error handling
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   if (err instanceof multer.MulterError) {
