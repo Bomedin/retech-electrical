@@ -45,7 +45,7 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Helper: upload file to Cloudinary or save locally
 // NOTE: req is passed for building local URL
-aasync function saveImage(file, folder, req) {
+async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
     console.log(`Uploading to Cloudinary: ${folder}/${file.originalname}`);
     try {

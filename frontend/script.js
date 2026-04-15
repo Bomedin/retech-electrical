@@ -35,7 +35,7 @@ async function apiCall(endpoint, options = {}) {
 // Helper: File upload with token
 async function uploadWithToken(url, formData) {
   const token = localStorage.getItem('adminToken');
-  if (!token) throw new Error('No token found. Please login again.');
+  if (!token) throw new Error('No token found');
   const headers = { 'Authorization': `Bearer ${token}` };
   const res = await fetch(url, { method: 'POST', body: formData, headers, credentials: 'include' });
   return res;
@@ -91,8 +91,18 @@ async function uploadImageForService(serviceName) {
     if (!file) return;
     const formData = new FormData();
     formData.append('image', file);
+    const token = localStorage.getItem('adminToken');   // <-- get token
+    if (!token) {
+      alert('You are not logged in. Please login first.');
+      return;
+    }
     try {
-      const res = await uploadWithToken(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, formData);
+      const res = await fetch(`${API_BASE}/api/service-image/${encodeURIComponent(serviceName)}`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` },   // <-- send token
+        credentials: 'include'
+      });
       if (res.ok) {
         const data = await res.json();
         serviceImages[serviceName] = data.url;
