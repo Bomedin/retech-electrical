@@ -22,6 +22,11 @@ if (USE_CLOUDINARY) {
     api_secret: process.env.CLOUDINARY_API_SECRET
   });
   console.log('✅ Cloudinary configured');
+  console.log('Cloud name:', process.env.CLOUDINARY_CLOUD_NAME);
+  console.log('API key present:', !!process.env.CLOUDINARY_API_KEY);
+  console.log('API secret present:', !!process.env.CLOUDINARY_API_SECRET);
+} else {
+  console.log('⚠️ Cloudinary is disabled, using local file storage');
 }
 
 app.set('trust proxy', 1);
@@ -48,28 +53,29 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
     console.log(`Uploading to Cloudinary: ${folder}/${file.originalname}`);
+    console.log('Cloudinary config check:', {
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY ? '✓ present' : '✗ MISSING',
+      api_secret: process.env.CLOUDINARY_API_SECRET ? '✓ present' : '✗ MISSING'
+    });
+    
+    // Convert buffer to base64 data URI
+    const base64 = file.buffer.toString('base64');
+    const dataUri = `data:${file.mimetype};base64,${base64}`;
+    
     try {
-      const result = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          { folder, resource_type: 'image' },
-          (error, result) => {
-            if (error) {
-              console.error('Cloudinary upload error:', error);
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          }
-        );
-        uploadStream.end(file.buffer);
+      const result = await cloudinary.uploader.upload(dataUri, {
+        folder: folder,
+        resource_type: 'image'
       });
       console.log('Cloudinary upload success:', result.secure_url);
       return result.secure_url;
     } catch (err) {
-      console.error('Cloudinary upload failed:', err.message);
-      throw new Error('Cloudinary upload failed: ' + err.message);
+      console.error('Cloudinary upload error details:', err);
+      throw new Error(`Cloudinary upload failed: ${err.message}`);
     }
   } else {
+    // Local fallback
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = unique + path.extname(file.originalname);
     const filePath = path.join(uploadDir, filename);
