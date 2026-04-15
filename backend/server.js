@@ -24,7 +24,6 @@ if (USE_CLOUDINARY) {
   console.log('✅ Cloudinary configured');
 }
 
-// Trust proxy (for rate limiter on Render)
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
@@ -36,18 +35,17 @@ app.use('/api/', limiter);
 
 let currentToken = null;
 
-// No local uploads folder needed when using Cloudinary
-// Keep it only for backward compatibility
+// Local upload folder (only used if Cloudinary is disabled)
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir) && !USE_CLOUDINARY) fs.mkdirSync(uploadDir);
+if (!USE_CLOUDINARY && !fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 if (!USE_CLOUDINARY) app.use('/uploads', express.static(uploadDir));
 
-// Multer – still used to get the file buffer, but we upload to Cloudinary
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Helper: upload file to Cloudinary or save locally
-async function saveImage(file, folder = 'retech') {
+// NOTE: req is passed for building local URL
+async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -61,7 +59,6 @@ async function saveImage(file, folder = 'retech') {
     });
     return result.secure_url;
   } else {
-    // Local fallback
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = unique + path.extname(file.originalname);
     const filePath = path.join(uploadDir, filename);
@@ -70,17 +67,18 @@ async function saveImage(file, folder = 'retech') {
   }
 }
 
-// Helper to delete old image from Cloudinary (if needed)
+// Helper to delete old image from Cloudinary
 async function deleteImageByUrl(url) {
   if (!USE_CLOUDINARY || !url) return;
-  // Extract public ID from Cloudinary URL
-  const parts = url.split('/');
-  const filename = parts.pop().split('.')[0];
-  const folder = parts[parts.length - 2];
-  const publicId = `${folder}/${filename}`;
   try {
+    const parts = url.split('/');
+    const filename = parts.pop().split('.')[0];
+    const folder = parts[parts.length - 2];
+    const publicId = `${folder}/${filename}`;
     await cloudinary.uploader.destroy(publicId);
-  } catch (err) { console.error('Failed to delete old image', err); }
+  } catch (err) {
+    console.error('Failed to delete old image', err);
+  }
 }
 
 const dataFile = path.join(__dirname, 'data.json');
@@ -142,9 +140,8 @@ app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), asy
   const serviceName = decodeURIComponent(req.params.serviceName);
   if (!req.file) return res.status(400).json({ error: 'No file' });
   try {
-    const imageUrl = await saveImage(req.file, 'services');
+    const imageUrl = await saveImage(req.file, 'services', req);
     const data = readData();
-    // Delete old image from Cloudinary if it exists
     const oldUrl = data.serviceImages[serviceName];
     if (oldUrl && USE_CLOUDINARY) await deleteImageByUrl(oldUrl);
     data.serviceImages[serviceName] = imageUrl;
@@ -170,7 +167,7 @@ app.post('/api/site-image/:type', isAdmin, upload.single('image'), async (req, r
   if (type !== 'home' && type !== 'about') return res.status(400).json({ error: 'Invalid type' });
   if (!req.file) return res.status(400).json({ error: 'No file' });
   try {
-    const imageUrl = await saveImage(req.file, 'site');
+    const imageUrl = await saveImage(req.file, 'site', req);
     const data = readData();
     const key = type === 'home' ? 'homeBackground' : 'aboutImage';
     const oldUrl = data.siteImages[key];
@@ -227,7 +224,7 @@ app.post('/api/team', isAdmin, upload.single('image'), async (req, res) => {
   const data = readData();
   let imageUrl = null;
   if (req.file) {
-    imageUrl = await saveImage(req.file, 'team');
+    imageUrl = await saveImage(req.file, 'team', req);
   }
   const newMember = {
     id: Date.now(),
@@ -251,7 +248,7 @@ app.put('/api/team/:id', isAdmin, upload.single('image'), async (req, res) => {
   if (req.file) {
     const oldUrl = data.teamMembers[index].imageUrl;
     if (oldUrl && USE_CLOUDINARY) await deleteImageByUrl(oldUrl);
-    data.teamMembers[index].imageUrl = await saveImage(req.file, 'team');
+    data.teamMembers[index].imageUrl = await saveImage(req.file, 'team', req);
   }
   writeData(data);
   res.json({ success: true });
@@ -320,7 +317,7 @@ app.get('/api/blog', (req, res) => {
   res.json(data.blogPosts || []);
 });
 
-app.post('/api/blog', isAdmin, async (req, res) => {
+app.post('/api/blog', isAdmin, (req, res) => {
   const { title, summary, content, imageUrl } = req.body;
   if (!title || !summary) return res.status(400).json({ error: 'Title and summary required' });
   const data = readData();
@@ -398,7 +395,6 @@ app.delete('/api/appointments', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   if (err instanceof multer.MulterError) {
