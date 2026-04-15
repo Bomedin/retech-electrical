@@ -50,23 +50,31 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 // ========== SAVE IMAGE FUNCTION (fixed) ==========
 async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
-    console.log(`Uploading to Cloudinary: ${folder}/${file.originalname}`);
+    console.log(`Uploading to Cloudinary (unsigned): ${folder}/${file.originalname}`);
+    const uploadPreset = 'retech_unsigned'; // change to your preset name
+    
+    // Convert file buffer to base64 data URI
+    const base64 = file.buffer.toString('base64');
+    const dataUri = `data:${file.mimetype};base64,${base64}`;
+    
+    // Upload using unsigned preset (no signature required)
     return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: folder, resource_type: 'image' },
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            reject(new Error(`Cloudinary upload failed: ${error.message}`));
-          } else {
-            console.log('Cloudinary upload success:', result.secure_url);
-            resolve(result.secure_url);
-          }
+      cloudinary.uploader.upload(dataUri, {
+        folder: folder,
+        upload_preset: uploadPreset,
+        resource_type: 'image'
+      }, (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          reject(new Error(`Cloudinary upload failed: ${error.message}`));
+        } else {
+          console.log('Cloudinary upload success:', result.secure_url);
+          resolve(result.secure_url);
         }
-      );
-      uploadStream.end(file.buffer);
+      });
     });
   } else {
+    // local fallback
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = unique + path.extname(file.originalname);
     const filePath = path.join(uploadDir, filename);
