@@ -51,19 +51,11 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
     console.log(`Uploading to Cloudinary (unsigned): ${folder}/${file.originalname}`);
-    const uploadPreset = 'retech_unsigned'; // change to your preset name
+    const uploadPreset = 'retech_unsigned'; // Replace with your exact unsigned preset name
     
-    // Convert file buffer to base64 data URI
-    const base64 = file.buffer.toString('base64');
-    const dataUri = `data:${file.mimetype};base64,${base64}`;
-    
-    // Upload using unsigned preset (no signature required)
     return new Promise((resolve, reject) => {
-      cloudinary.uploader.upload(dataUri, {
-        folder: folder,
-        upload_preset: uploadPreset,
-        resource_type: 'image'
-      }, (error, result) => {
+      // ✅ Use unsigned_upload_stream for unsigned presets
+      cloudinary.uploader.unsigned_upload_stream(uploadPreset, (error, result) => {
         if (error) {
           console.error('Cloudinary upload error:', error);
           reject(new Error(`Cloudinary upload failed: ${error.message}`));
@@ -71,7 +63,7 @@ async function saveImage(file, folder, req) {
           console.log('Cloudinary upload success:', result.secure_url);
           resolve(result.secure_url);
         }
-      });
+      }).end(file.buffer);
     });
   } else {
     // local fallback
