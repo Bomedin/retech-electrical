@@ -45,19 +45,30 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Helper: upload file to Cloudinary or save locally
 // NOTE: req is passed for building local URL
-async function saveImage(file, folder, req) {
+aasync function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder, resource_type: 'image' },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
-      );
-      uploadStream.end(file.buffer);
-    });
-    return result.secure_url;
+    console.log(`Uploading to Cloudinary: ${folder}/${file.originalname}`);
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { folder, resource_type: 'image' },
+          (error, result) => {
+            if (error) {
+              console.error('Cloudinary upload error:', error);
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+        uploadStream.end(file.buffer);
+      });
+      console.log('Cloudinary upload success:', result.secure_url);
+      return result.secure_url;
+    } catch (err) {
+      console.error('Cloudinary upload failed:', err.message);
+      throw new Error('Cloudinary upload failed: ' + err.message);
+    }
   } else {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = unique + path.extname(file.originalname);
@@ -138,7 +149,10 @@ app.get('/api/service-images', (req, res) => {
 
 app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), async (req, res) => {
   const serviceName = decodeURIComponent(req.params.serviceName);
+  console.log('Received upload request for service:', serviceName);
+  
   if (!req.file) return res.status(400).json({ error: 'No file' });
+  
   try {
     const imageUrl = await saveImage(req.file, 'services', req);
     const data = readData();
@@ -148,8 +162,8 @@ app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), asy
     writeData(data);
     res.json({ success: true, url: imageUrl });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Upload failed' });
+    console.error('Upload error in route:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
