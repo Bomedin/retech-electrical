@@ -14,17 +14,17 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const USE_CLOUDINARY = process.env.USE_CLOUDINARY === 'true';
 
-// Configure Cloudinary if enabled
+// Configure Cloudinary with trimmed environment variables
 if (USE_CLOUDINARY) {
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME?.trim(),
+    api_key: process.env.CLOUDINARY_API_KEY?.trim(),
+    api_secret: process.env.CLOUDINARY_API_SECRET?.trim()
   });
   console.log('✅ Cloudinary configured');
-  console.log('Cloud name:', process.env.CLOUDINARY_CLOUD_NAME);
-  console.log('API key present:', !!process.env.CLOUDINARY_API_KEY);
-  console.log('API secret present:', !!process.env.CLOUDINARY_API_SECRET);
+  console.log('Cloud name:', cloudinary.config().cloud_name);
+  console.log('API key present:', !!cloudinary.config().api_key);
+  console.log('API secret present:', !!cloudinary.config().api_secret);
 } else {
   console.log('⚠️ Cloudinary is disabled, using local file storage');
 }
@@ -40,7 +40,6 @@ app.use('/api/', limiter);
 
 let currentToken = null;
 
-// Local upload folder (only used if Cloudinary is disabled)
 const uploadDir = path.join(__dirname, 'uploads');
 if (!USE_CLOUDINARY && !fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 if (!USE_CLOUDINARY) app.use('/uploads', express.static(uploadDir));
@@ -48,34 +47,26 @@ if (!USE_CLOUDINARY) app.use('/uploads', express.static(uploadDir));
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Helper: upload file to Cloudinary or save locally
-// NOTE: req is passed for building local URL
+// ========== SAVE IMAGE FUNCTION (fixed) ==========
 async function saveImage(file, folder, req) {
   if (USE_CLOUDINARY) {
     console.log(`Uploading to Cloudinary: ${folder}/${file.originalname}`);
-    console.log('Cloudinary config check:', {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY ? '✓ present' : '✗ MISSING',
-      api_secret: process.env.CLOUDINARY_API_SECRET ? '✓ present' : '✗ MISSING'
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: folder, resource_type: 'image' },
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary upload error:', error);
+            reject(new Error(`Cloudinary upload failed: ${error.message}`));
+          } else {
+            console.log('Cloudinary upload success:', result.secure_url);
+            resolve(result.secure_url);
+          }
+        }
+      );
+      uploadStream.end(file.buffer);
     });
-    
-    // Convert buffer to base64 data URI
-    const base64 = file.buffer.toString('base64');
-    const dataUri = `data:${file.mimetype};base64,${base64}`;
-    
-    try {
-      const result = await cloudinary.uploader.upload(dataUri, {
-        folder: folder,
-        resource_type: 'image'
-      });
-      console.log('Cloudinary upload success:', result.secure_url);
-      return result.secure_url;
-    } catch (err) {
-      console.error('Cloudinary upload error details:', err);
-      throw new Error(`Cloudinary upload failed: ${err.message}`);
-    }
   } else {
-    // Local fallback
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = unique + path.extname(file.originalname);
     const filePath = path.join(uploadDir, filename);
@@ -98,6 +89,7 @@ async function deleteImageByUrl(url) {
   }
 }
 
+// ========== DATA PERSISTENCE ==========
 const dataFile = path.join(__dirname, 'data.json');
 function readData() {
   if (!fs.existsSync(dataFile)) {
@@ -156,9 +148,7 @@ app.get('/api/service-images', (req, res) => {
 app.post('/api/service-image/:serviceName', isAdmin, upload.single('image'), async (req, res) => {
   const serviceName = decodeURIComponent(req.params.serviceName);
   console.log('Received upload request for service:', serviceName);
-  
   if (!req.file) return res.status(400).json({ error: 'No file' });
-  
   try {
     const imageUrl = await saveImage(req.file, 'services', req);
     const data = readData();
@@ -197,7 +187,7 @@ app.post('/api/site-image/:type', isAdmin, upload.single('image'), async (req, r
     res.json({ success: true, url: imageUrl });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Upload failed' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -415,6 +405,7 @@ app.delete('/api/appointments', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
   if (err instanceof multer.MulterError) {
